@@ -1,0 +1,76 @@
+name: Build IRENGlish unsigned iOS IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-ios:
+    name: Build unsigned iOS IPA
+    runs-on: macos-26
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Show build environment
+        run: |
+          node --version
+          npm --version
+          xcodebuild -version
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build web application
+        run: npm run build
+
+      - name: Add Capacitor iOS platform
+        run: npx cap add ios
+
+      - name: Sync Capacitor iOS project
+        run: npx cap sync ios
+
+      - name: Verify Xcode workspace
+        run: test -d ios/App/App.xcworkspace
+
+      - name: Build unsigned iOS archive
+        run: |
+          xcodebuild \
+            -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/IRENGlish.xcarchive" \
+            -derivedDataPath "$RUNNER_TEMP/IRENGlish-DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            archive
+
+      - name: Package unsigned IPA
+        run: |
+          APP_PATH="$RUNNER_TEMP/IRENGlish.xcarchive/Products/Applications/App.app"
+          test -d "$APP_PATH"
+          mkdir -p "$RUNNER_TEMP/IRENGlish-ipa/Payload"
+          cp -R "$APP_PATH" "$RUNNER_TEMP/IRENGlish-ipa/Payload/App.app"
+          cd "$RUNNER_TEMP/IRENGlish-ipa"
+          /usr/bin/zip -qry "$GITHUB_WORKSPACE/IRENGlish-unsigned.ipa" Payload
+          test -s "$GITHUB_WORKSPACE/IRENGlish-unsigned.ipa"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: IRENGlish-unsigned-IPA
+          path: IRENGlish-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
